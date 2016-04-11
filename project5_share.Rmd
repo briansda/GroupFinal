@@ -1,0 +1,1021 @@
+---
+title: "TSP project 5"
+author: "Brian Davis"
+date: "March 31, 2016"
+output: word_document
+---
+
+#1.Commented Code
+ProblemAndSolver.cs
+```
+using System;
+using System.Collections;
+using System.Collections.Generic;
+using System.Text;
+using System.Drawing;
+using System.Diagnostics;
+
+
+namespace TSP
+{
+
+    class ProblemAndSolver
+    {
+
+        private class TSPSolution
+        {
+            /// <summary>
+            /// we use the representation [cityB,cityA,cityC] 
+            /// to mean that cityB is the first city in the solution, cityA is the second, cityC is the third 
+            /// and the edge from cityC to cityB is the final edge in the path.  
+            /// You are, of course, free to use a different representation if it would be more convenient or efficient 
+            /// for your data structure(s) and search algorithm. 
+            /// </summary>
+            public ArrayList
+                Route;
+
+            /// <summary>
+            /// constructor
+            /// </summary>
+            /// <param name="iroute">a (hopefully) valid tour</param>
+            public TSPSolution(ArrayList iroute)
+            {
+                Route = new ArrayList(iroute);
+            }
+
+            /// <summary>
+            /// Compute the cost of the current route.  
+            /// Note: This does not check that the route is complete.
+            /// It assumes that the route passes from the last city back to the first city. 
+            /// </summary>
+            /// <returns></returns>
+            public double costOfRoute()
+            {
+                // go through each edge in the route and add up the cost. 
+                int x;
+                City here;
+                double cost = 0D;
+
+                for (x = 0; x < Route.Count - 1; x++)
+                {
+                    here = Route[x] as City;
+                    cost += here.costToGetTo(Route[x + 1] as City);
+                }
+
+                // go from the last city to the first. 
+                here = Route[Route.Count - 1] as City;
+                cost += here.costToGetTo(Route[0] as City);
+                return cost;
+            }
+        }
+
+        #region Private members 
+
+        /// <summary>
+        /// Default number of cities (unused -- to set defaults, change the values in the GUI form)
+        /// </summary>
+        // (This is no longer used -- to set default values, edit the form directly.  Open Form1.cs,
+        // click on the Problem Size text box, go to the Properties window (lower right corner), 
+        // and change the "Text" value.)
+        private const int DEFAULT_SIZE = 25;
+
+        /// <summary>
+        /// Default time limit (unused -- to set defaults, change the values in the GUI form)
+        /// </summary>
+        // (This is no longer used -- to set default values, edit the form directly.  Open Form1.cs,
+        // click on the Time text box, go to the Properties window (lower right corner), 
+        // and change the "Text" value.)
+        private const int TIME_LIMIT = 60;        //in seconds
+
+        private const int CITY_ICON_SIZE = 5;
+
+
+        // For normal and hard modes:
+        // hard mode only
+        private const double FRACTION_OF_PATHS_TO_REMOVE = 0.20;
+
+        /// <summary>
+        /// the cities in the current problem.
+        /// </summary>
+        private City[] Cities;
+        /// <summary>
+        /// a route through the current problem, useful as a temporary variable. 
+        /// </summary>
+        private ArrayList Route;
+        /// <summary>
+        /// best solution so far. 
+        /// </summary>
+        private TSPSolution bssf; 
+
+        /// <summary>
+        /// how to color various things. 
+        /// </summary>
+        private Brush cityBrushStartStyle;
+        private Brush cityBrushStyle;
+        private Pen routePenStyle;
+
+
+        /// <summary>
+        /// keep track of the seed value so that the same sequence of problems can be 
+        /// regenerated next time the generator is run. 
+        /// </summary>
+        private int _seed;
+        /// <summary>
+        /// number of cities to include in a problem. 
+        /// </summary>
+        private int _size;
+
+        /// <summary>
+        /// Difficulty level
+        /// </summary>
+        private HardMode.Modes _mode;
+
+        /// <summary>
+        /// random number generator. 
+        /// </summary>
+        private Random rnd;
+
+        /// <summary>
+        /// time limit in milliseconds for state space search
+        /// can be used by any solver method to truncate the search and return the BSSF
+        /// </summary>
+        private int time_limit;
+        #endregion
+
+        #region Public members
+
+        /// <summary>
+        /// These three constants are used for convenience/clarity in populating and accessing the results array that is passed back to the calling Form
+        /// </summary>
+        public const int COST = 0;           
+        public const int TIME = 1;
+        public const int COUNT = 2;
+        
+        public int Size
+        {
+            get { return _size; }
+        }
+
+        public int Seed
+        {
+            get { return _seed; }
+        }
+        #endregion
+
+        #region Constructors
+        public ProblemAndSolver()
+        {
+            this._seed = 1; 
+            rnd = new Random(1);
+            this._size = DEFAULT_SIZE;
+            this.time_limit = TIME_LIMIT * 1000;                  // TIME_LIMIT is in seconds, but timer wants it in milliseconds
+
+            this.resetData();
+        }
+
+        public ProblemAndSolver(int seed)
+        {
+            this._seed = seed;
+            rnd = new Random(seed);
+            this._size = DEFAULT_SIZE;
+            this.time_limit = TIME_LIMIT * 1000;                  // TIME_LIMIT is in seconds, but timer wants it in milliseconds
+
+            this.resetData();
+        }
+
+        public ProblemAndSolver(int seed, int size)
+        {
+            this._seed = seed;
+            this._size = size;
+            rnd = new Random(seed);
+            this.time_limit = TIME_LIMIT * 1000;                        // TIME_LIMIT is in seconds, but timer wants it in milliseconds
+
+            this.resetData();
+        }
+        public ProblemAndSolver(int seed, int size, int time)
+        {
+            this._seed = seed;
+            this._size = size;
+            rnd = new Random(seed);
+            this.time_limit = time*1000;                        // time is entered in the GUI in seconds, but timer wants it in milliseconds
+
+            this.resetData();
+        }
+        #endregion
+
+        #region Private Methods
+
+        /// <summary>
+        /// Reset the problem instance.
+        /// </summary>
+        private void resetData()
+        {
+
+            Cities = new City[_size];
+            Route = new ArrayList(_size);
+            bssf = null;
+
+            if (_mode == HardMode.Modes.Easy)
+            {
+                for (int i = 0; i < _size; i++)
+                    Cities[i] = new City(rnd.NextDouble(), rnd.NextDouble());
+            }
+            else // Medium and hard
+            {
+                for (int i = 0; i < _size; i++)
+                    Cities[i] = new City(rnd.NextDouble(), rnd.NextDouble(), rnd.NextDouble() * City.MAX_ELEVATION);
+            }
+
+            HardMode mm = new HardMode(this._mode, this.rnd, Cities);
+            if (_mode == HardMode.Modes.Hard)
+            {
+                int edgesToRemove = (int)(_size * FRACTION_OF_PATHS_TO_REMOVE);
+                mm.removePaths(edgesToRemove);
+            }
+            City.setModeManager(mm);
+
+            cityBrushStyle = new SolidBrush(Color.Black);
+            cityBrushStartStyle = new SolidBrush(Color.Red);
+            routePenStyle = new Pen(Color.Blue,1);
+            routePenStyle.DashStyle = System.Drawing.Drawing2D.DashStyle.Solid;
+        }
+
+        #endregion
+
+        #region Public Methods
+
+        /// <summary>
+        /// make a new problem with the given size.
+        /// </summary>
+        /// <param name="size">number of cities</param>
+        public void GenerateProblem(int size, HardMode.Modes mode)
+        {
+            this._size = size;
+            this._mode = mode;
+            resetData();
+        }
+
+        /// <summary>
+        /// make a new problem with the given size, now including timelimit paremeter that was added to form.
+        /// </summary>
+        /// <param name="size">number of cities</param>
+        public void GenerateProblem(int size, HardMode.Modes mode, int timelimit)
+        {
+            this._size = size;
+            this._mode = mode;
+            this.time_limit = timelimit*1000;                                   //convert seconds to milliseconds
+            resetData();
+        }
+
+        /// <summary>
+        /// return a copy of the cities in this problem. 
+        /// </summary>
+        /// <returns>array of cities</returns>
+        public City[] GetCities()
+        {
+            City[] retCities = new City[Cities.Length];
+            Array.Copy(Cities, retCities, Cities.Length);
+            return retCities;
+        }
+
+        /// <summary>
+        /// draw the cities in the problem.  if the bssf member is defined, then
+        /// draw that too. 
+        /// </summary>
+        /// <param name="g">where to draw the stuff</param>
+        public void Draw(Graphics g)
+        {
+            float width  = g.VisibleClipBounds.Width-45F;
+            float height = g.VisibleClipBounds.Height-45F;
+            Font labelFont = new Font("Arial", 10);
+
+            // Draw lines
+            if (bssf != null)
+            {
+                // make a list of points. 
+                Point[] ps = new Point[bssf.Route.Count];
+                int index = 0;
+                foreach (City c in bssf.Route)
+                {
+                    if (index < bssf.Route.Count -1)
+                        g.DrawString(" " + index +"("+c.costToGetTo(bssf.Route[index+1]as City)+")", labelFont, cityBrushStartStyle, new PointF((float)c.X * width + 3F, (float)c.Y * height));
+                    else 
+                        g.DrawString(" " + index +"("+c.costToGetTo(bssf.Route[0]as City)+")", labelFont, cityBrushStartStyle, new PointF((float)c.X * width + 3F, (float)c.Y * height));
+                    ps[index++] = new Point((int)(c.X * width) + CITY_ICON_SIZE / 2, (int)(c.Y * height) + CITY_ICON_SIZE / 2);
+                }
+
+                if (ps.Length > 0)
+                {
+                    g.DrawLines(routePenStyle, ps);
+                    g.FillEllipse(cityBrushStartStyle, (float)Cities[0].X * width - 1, (float)Cities[0].Y * height - 1, CITY_ICON_SIZE + 2, CITY_ICON_SIZE + 2);
+                }
+
+                // draw the last line. 
+                g.DrawLine(routePenStyle, ps[0], ps[ps.Length - 1]);
+            }
+
+            // Draw city dots
+            foreach (City c in Cities)
+            {
+                g.FillEllipse(cityBrushStyle, (float)c.X * width, (float)c.Y * height, CITY_ICON_SIZE, CITY_ICON_SIZE);
+            }
+
+        }
+
+        /// <summary>
+        ///  return the cost of the best solution so far. 
+        /// </summary>
+        /// <returns></returns>
+        public double costOfBssf ()
+        {
+            if (bssf != null)
+                return (bssf.costOfRoute());
+            else
+                return -1D; 
+        }
+
+        /// <summary>
+        /// This is the entry point for the default solver
+        /// which just finds a valid random tour 
+        /// </summary>
+        /// <returns>results array for GUI that contains three ints: cost of solution, time spent to find solution, number of solutions found during search (not counting initial BSSF estimate)</returns>
+        public string[] defaultSolveProblem()
+        {
+            int i, swap, temp, count=0;
+            string[] results = new string[3];
+            int[] perm = new int[Cities.Length];
+            Route = new ArrayList();
+            Random rnd = new Random();
+            Stopwatch timer = new Stopwatch();
+
+            timer.Start();
+
+            do
+            {
+                for (i = 0; i < perm.Length; i++)                                 // create a random permutation template
+                    perm[i] = i;
+                for (i = 0; i < perm.Length; i++)
+                {
+                    swap = i;
+                    while (swap == i)
+                        swap = rnd.Next(0, Cities.Length);
+                    temp = perm[i];
+                    perm[i] = perm[swap];
+                    perm[swap] = temp;
+                }
+                Route.Clear();
+                for (i = 0; i < Cities.Length; i++)                            // Now build the route using the random permutation 
+                {
+                    Route.Add(Cities[perm[i]]);
+                }
+                bssf = new TSPSolution(Route);
+                count++;
+            } while (costOfBssf() == double.PositiveInfinity);                // until a valid route is found
+            timer.Stop();
+
+            results[COST] = costOfBssf().ToString();                          // load results array
+            results[TIME] = timer.Elapsed.ToString();
+            results[COUNT] = count.ToString();
+
+            return results;
+        }
+
+        public double[,] makeCostMatrix()
+        {
+            double[,] Matrix = new double[Cities.Length, Cities.Length];
+            for (int y = 0; y < Matrix.GetLength(1); y++)
+            {
+                for (int x = 0; x < Matrix.GetLength(0); x++)
+                {
+                    if (x == y)
+                    {
+                        Matrix[x, y] = double.PositiveInfinity;
+                    }
+                    else
+                    {
+                        Matrix[x, y] = Cities[x].costToGetTo(Cities[y]);
+                    }
+                }
+            }
+            return Matrix;
+        }
+
+        public void printMatrix(double[,] Matrix)
+        {
+            for (int y = 0; y < Matrix.GetLength(1); y++)
+            {
+                for (int x = 0; x < Matrix.GetLength(0); x++)
+                {
+                    Console.Write("[" + x + ", " + y + "] =" + Matrix[x, y] + " ");
+                }
+                Console.WriteLine();
+            }
+            return;
+        }
+
+
+        /// <summary>
+        /// performs a Branch and Bound search of the state space of partial tours
+        /// stops when time limit expires and uses BSSF as solution
+        /// </summary>
+        /// <returns>results array for GUI that contains three ints: cost of solution, time spent to find solution, number of solutions found during search (not counting initial BSSF estimate)</returns>
+        public string[] bBSolveProblem()
+        {
+            Stopwatch timer = new Stopwatch();
+            timer.Start();
+            string[] results = new string[3];
+
+            // TODO: Add your implementation for a branch and bound solver here.
+            defaultSolveProblem();
+
+            double[,] costMatrix = makeCostMatrix();
+            double lowerBound = 0;
+            int solutions = 0;
+            for (int y = 0; y < costMatrix.GetLength(1); y++)
+            {
+                double smallestValue = double.PositiveInfinity;
+                for (int x = 0; x < costMatrix.GetLength(0); x++)
+                {
+                    if (costMatrix[x, y] < smallestValue)
+                    {
+                        smallestValue = costMatrix[x, y];
+                    }
+                }
+                lowerBound += smallestValue;
+                for (int x =0; x < costMatrix.GetLength(0); x++)
+                {
+                    costMatrix[x, y] = costMatrix[x, y] - smallestValue;
+                }
+            }
+            for (int x =0; x < costMatrix.GetLength(0);x++)
+            {
+                Boolean zeroInColumn = false;
+                double smallestValueInColumn = double.PositiveInfinity;
+                for (int y=0;y <costMatrix.GetLength(1);y++)
+                {
+                    if (costMatrix[x,y]< smallestValueInColumn)
+                    {
+                        smallestValueInColumn = costMatrix[x, y];
+                    }
+                }
+                if (smallestValueInColumn!=0)
+                {
+                    lowerBound += smallestValueInColumn;
+                    for (int y =0; y < costMatrix.GetLength(1); y++)
+                    {
+                        costMatrix[x, y] -= smallestValueInColumn;
+                    }
+                }
+            }
+            //Console.WriteLine("Fixed Matrix");
+            //printMatrix(costMatrix);
+            
+            HashSet<int> CityIndexSet = new HashSet<int>();
+            for (int i =0; i < Cities.Length; i++)
+            {
+                CityIndexSet.Add(i);
+            }
+           // Console.WriteLine("CityIndexSet is this big:" + CityIndexSet.Count);
+            PriorityQueue<TSPState> Que = new PriorityQueue<TSPState>();
+            int createdStates = 0;
+            for (int i =0; i< Cities.Length;i++)
+            {
+                TSPState originalStates = new TSPState(costMatrix, new List<int>(), lowerBound, i, CityIndexSet);
+                Que.Enqueue(originalStates);
+                createdStates += 1;
+                //originalStates.toString();
+            }
+            int queMax = 0;
+            int pruned = 0;
+            //Console.WriteLine("Cost of Bssf is:" +costOfBssf());
+           /* Console.WriteLine("TotalSeconds:" + timer.Elapsed.Seconds);
+            Console.WriteLine("QueMax:" + queMax);
+            Console.WriteLine("Pruned: " + pruned);
+            Console.WriteLine("Created States: " + createdStates);
+            Console.WriteLine("cost of Bssf: " + costOfBssf().ToString());
+            Console.WriteLine("Solutions: " + solutions.ToString());*/
+            while (Que.getCount() !=0)
+            {
+                /*Console.WriteLine("TotalMinutes:" + timer.Elapsed.Minutes);
+                Console.WriteLine("QueMax:" + queMax);
+                Console.WriteLine("Pruned: " + pruned);
+                Console.WriteLine("Created States: " + createdStates);
+                Console.WriteLine("cost of Bssf: " + costOfBssf().ToString());
+                Console.WriteLine("Solutions: " + solutions.ToString());*/
+                if (Que.getCount()>queMax)
+                {
+                    queMax = Que.getCount();
+                }
+                //Console.WriteLine("P&S This is the one being removed");
+                //Que.peek().toString();
+                TSPState currentState = Que.Dequeue();
+                //Console.WriteLine("P&S This is the one actually removed");
+                //currentState.toString();
+                if (double.IsPositiveInfinity(currentState.getLowerBound()))
+                {
+                    pruned += 1;
+                    timer.Stop();
+                    
+                    if (timer.Elapsed.Minutes >= 1)
+                    {
+                        Console.WriteLine("You've made it to 60");
+                        break;
+                    }
+                    timer.Start();
+                    //Console.WriteLine("P&S The currentState had a Lower bound of infinity");
+                    continue;
+                }
+                if(currentState.getLowerBound()> costOfBssf())
+                {
+                    pruned += 1;
+                    timer.Stop();
+                    if (timer.Elapsed.Minutes >= 1)
+                    {
+                        Console.WriteLine("You've made it to 60");
+                        break;
+                    }
+                    timer.Start();
+                    //Console.WriteLine("The currentState had a Lower bound of higher than Bssf");
+                    continue;
+                }
+                HashSet<int> remainingCities = new HashSet<int>(currentState.getRemainingCities());
+                foreach(int cityIndex in remainingCities)
+                {
+                    TSPState newState = new TSPState(currentState.getCostMatrix(), currentState.getPath(), currentState.getLowerBound(), cityIndex, currentState.getRemainingCities());
+                    if(newState.getPath().Count ==Cities.Length)
+                    {
+                        //Console.WriteLine("p&S It is in a potential solution");
+                        ArrayList potentialSolution = new ArrayList(generatePath(newState.getPath()));
+                        //Console.WriteLine("P&S SOLUTION ARRAY: " +string.Join(", ", potentialSolution.ToArray()));
+                        double potentialSolutionCost = pathCost(newState.getPath());
+                        //Console.WriteLine("P&S THIS IS THE POTENTIAL COST: " + potentialSolutionCost);
+                        if (potentialSolutionCost < costOfBssf())
+                        {
+                           // Console.WriteLine("####################");
+                            bssf = new TSPSolution(potentialSolution);
+                            solutions++;
+                            timer.Stop();
+                            if (timer.Elapsed.Minutes >= 1)
+                            {
+                                Console.WriteLine("You've made it to 60");
+                                break;
+                            }
+                            timer.Start();
+                        }
+                        else
+                        {
+                            timer.Stop();
+
+                            if (timer.Elapsed.Minutes >= 1)
+                            {
+                                Console.WriteLine("You've made it to 60");
+                                break;
+                            }
+                            timer.Start();
+                            pruned += 1;
+                        }
+                    }
+                    else
+                    {
+                        //Console.WriteLine("P&S It got added to the enque");
+                        Que.Enqueue(newState);
+                        createdStates += 1;
+                        timer.Stop();
+
+                        if (timer.Elapsed.Seconds > 60)
+                        {
+                            Console.WriteLine("You've made it to 60");
+                            break;
+                        }
+                        timer.Start();
+                    }
+                }
+            }
+
+            timer.Stop();
+            Console.WriteLine("TotalSeconds:" + timer.Elapsed.Seconds);
+            Console.WriteLine("QueMax:" + queMax);
+            Console.WriteLine("Pruned: " + pruned);
+            Console.WriteLine("Created States: " + createdStates);
+            Console.WriteLine("cost of Bssf: " +costOfBssf().ToString());
+            Console.WriteLine("Solutions: " + solutions.ToString());
+            results[COST] = costOfBssf().ToString();    // load results into array here, replacing these dummy values
+            results[TIME] = timer.Elapsed.ToString();
+            results[COUNT] = solutions.ToString();
+
+
+
+            return results;
+        }
+
+
+        private double pathCost(List<int> list)
+        {
+            double totalCost = 0;
+            for(int i =0; i < list.Count; i++)
+            {
+                if (i < (list.Count -1))
+                {
+                    totalCost += Cities[list[i]].costToGetTo(Cities[list[i + 1]]);
+                }
+                if(i==(list.Count -1))
+                {
+                    totalCost += Cities[list[i]].costToGetTo(Cities[list[0]]);
+                }
+            }
+            return totalCost;
+        }
+
+        private ArrayList generatePath(List<int> list)
+        {
+            ArrayList output = new ArrayList();
+            for (int i = 0; i < list.Count; i++)
+            {
+                //Console.WriteLine("Adding " + list[i] + " to list of cities");
+                output.Add(Cities[list[i]]);
+            }
+            return output;
+        }
+
+        /////////////////////////////////////////////////////////////////////////////////////////////
+        // These additional solver methods will be implemented as part of the group project.
+        ////////////////////////////////////////////////////////////////////////////////////////////
+
+        /// <summary>
+        /// finds the greedy tour starting from each city and keeps the best (valid) one
+        /// </summary>
+        /// <returns>results array for GUI that contains three ints: cost of solution, time spent to find solution, number of solutions found during search (not counting initial BSSF estimate)</returns>
+        public string[] greedySolveProblem()
+        {
+            int i, swap, temp, count = 0;
+            string[] results = new string[3];
+            int[] perm = new int[Cities.Length];
+            Route = new ArrayList();
+            Random rnd = new Random();
+            Stopwatch timer = new Stopwatch();
+
+            timer.Start();
+
+            do
+            {
+                for (i = 0; i < perm.Length; i++)                                 // create a random permutation template
+                    perm[i] = i;
+                for (i = 0; i < perm.Length; i++)
+                {
+                    swap = i;
+                    while (swap == i)
+                        swap = rnd.Next(0, Cities.Length);
+                    temp = perm[i];
+                    perm[i] = perm[swap];
+                    perm[swap] = temp;
+                }
+                Route.Clear();
+                for (i = 0; i < Cities.Length; i++)                            // Now build the route using the random permutation 
+                {
+                    Route.Add(Cities[perm[i]]);
+                }
+                bssf = new TSPSolution(Route);
+                count++;
+            } while (costOfBssf() == double.PositiveInfinity);                // until a valid route is found
+            timer.Stop();
+
+            results[COST] = costOfBssf().ToString();                          // load results array
+            results[TIME] = timer.Elapsed.ToString();
+            results[COUNT] = count.ToString();
+
+            return results;
+        }
+
+        public string[] fancySolveProblem()
+        {
+            string[] results = new string[3];
+
+            // TODO: Add your implementation for your advanced solver here.
+
+            results[COST] = "not implemented";    // load results into array here, replacing these dummy values
+            results[TIME] = "-1";
+            results[COUNT] = "-1";
+
+            return results;
+        }
+        #endregion
+    }
+
+}
+
+```
+PriorityQueue.cs
+```
+using System;
+using System.Collections.Generic;
+
+namespace TSP
+{
+    public struct Heap<T>
+    {
+        private T item;
+
+        public Heap(T item)
+        {
+            this.item = item;
+        }
+        public T getItem()
+        {
+            return item;
+        }
+    }
+    internal class PriorityQueue<T> where T : IComparable<T>
+    {
+        private int count;
+        private int capacity;
+        private Heap<T>[] data;
+
+        public PriorityQueue()
+        {
+            capacity = 100;
+            data = new Heap<T>[capacity];
+        }
+
+        public void Enqueue(T item)
+        {
+            if (count ==capacity)
+            {
+                growHeap();
+            }
+            count++;
+            bubbleUp(count - 1, new Heap<T>(item));
+        }
+
+        public T Dequeue()
+        {
+            if (count ==0)
+            {
+                throw new InvalidOperationException();
+            }
+
+            T result = data[0].getItem();
+            count--;
+            trickleDown(0, data[count]);
+            return result;
+        }
+        private void growHeap()
+        {
+            capacity = (capacity * 2) + 1;
+            Heap<T>[] newHeap = new Heap<T>[capacity];
+            System.Array.Copy(data, 0, newHeap, 0, count);
+            data = newHeap;
+        }
+
+        private void bubbleUp(int index, Heap<T> heap)
+        {
+            int parent = (index - 1) / 2;
+            while ((index>0) && (data[parent].getItem().CompareTo(heap.getItem()) >0))
+            {
+                data[index] = data[parent];
+                index = parent;
+                parent = (index - 1) / 2;
+            }
+            data[index] = heap;
+        }
+
+        private void trickleDown(int index, Heap<T> heap)
+        {
+            int child = (index * 2) + 1;
+            while (child < count)
+            {
+                if (((child+1) < count) && (data[child].getItem().CompareTo(data[child+1].getItem())>0))
+                {
+                    child++;
+                }
+                data[index] = data[child];
+                index = child;
+                child = (index * 2) + 1;
+            }
+            bubbleUp(index, heap);
+        }
+
+        private int findItem(T item)
+        {
+            int retVal = -1;
+            for (int i =0; i < data.Length; i++)
+            {
+                if (data[i].getItem().Equals(item))
+                {
+                    retVal = i;
+                    break;
+                }
+            }
+            return retVal;
+        }
+
+        public void decreaseKey(T item)
+        {
+            int index = findItem(item);
+            if(index >-1)
+            {
+                bubbleUp(index, data[index]);
+            }
+        }
+        public bool contains(T item)
+        {
+            return findItem(item) > -1;
+        }
+
+        public int getCount()
+        {
+           return count;
+        }
+
+        public T peek()
+        {
+            if (data.Length <1)
+            {
+                return default(T); 
+            }
+            return data[0].getItem();
+        }
+    }
+}
+```
+TSPState.cs
+```
+using System;
+using System.Collections.Generic;
+
+namespace TSP
+{
+    class TSPState : IComparable<TSPState>
+    {
+         HashSet<int> remainingCities;
+         double[,] costMatrix;
+         List<int> path;
+         double lowerBound;
+
+        public void printMatrix(double[,] Matrix)
+        {
+            for (int y = 0; y < Matrix.GetLength(1); y++)
+            {
+                for (int x = 0; x < Matrix.GetLength(0); x++)
+                {
+                    Console.Write("[" + x + ", " + y + "] =" + Matrix[x, y] + " ");
+                }
+                Console.WriteLine();
+            }
+            return;
+        }
+        public TSPState(double[,] originalMatrix, List<int> originalPath, double originalLowerBound, int CityToAdd, HashSet<int> cityIndexSet2)
+        {
+            costMatrix = new double[originalMatrix.GetLength(0), originalMatrix.GetLength(1)];
+            Array.Copy(originalMatrix, 0, costMatrix, 0, originalMatrix.Length);
+            //Console.WriteLine("Original matrix");
+            //printMatrix(originalMatrix);
+            //Console.WriteLine("New matrix");
+            //printMatrix(costMatrix);
+            path = new List<int>(originalPath);
+            //Console.WriteLine("original path is now:" + string.Join(", ", path.ToArray()));
+           // Console.WriteLine("this is the cityToAdd for:" + CityToAdd);
+            lowerBound = originalLowerBound;
+            remainingCities = new HashSet<int>(cityIndexSet2);
+            path.Add(CityToAdd);
+           // Console.WriteLine("Path is this big: " + path.Count);
+            //Console.WriteLine("This is Path now: " + string.Join(", ", path));
+            remainingCities.Remove(CityToAdd);
+            //Console.WriteLine("This is remainingCities now: " + string.Join(", ", remainingCities));
+           // Console.WriteLine("This is CityIndexSet2 now: " + string.Join(", ", cityIndexSet2));
+            if (path.Count > 1)
+            {
+                //Console.WriteLine("This is where it gets changed");
+                //printMatrix(costMatrix);
+                int SourceCity = path[path.Count - 2];
+                if (double.IsPositiveInfinity(costMatrix[SourceCity,CityToAdd]))
+                {
+                    //Console.WriteLine("Somehow the value at: [" + SourceCity + ", " + CityToAdd +"] is already infinity");
+                    lowerBound = double.PositiveInfinity;
+                    return;
+                }
+                //Console.WriteLine("It wasn't infinity to add");
+                lowerBound += costMatrix[SourceCity, CityToAdd];
+                costMatrix[SourceCity, CityToAdd] = double.PositiveInfinity;
+                costMatrix[CityToAdd, SourceCity] = double.PositiveInfinity;
+                    for (int y = 0; y < costMatrix.GetLength(1); y++)
+                    {
+                        costMatrix[y, CityToAdd] = double.PositiveInfinity;
+                    }
+                for (int y = 0; y < costMatrix.GetLength(1); y++)
+                {
+                    costMatrix[SourceCity, y] = double.PositiveInfinity;
+                }
+                checkMatrix();
+                //Console.WriteLine("afterAdding Matrix");
+                //printMatrix(costMatrix);
+            }
+            else
+            {
+                
+            }
+        }
+
+        public void checkMatrix()
+        {
+            for (int y = 0; y < costMatrix.GetLength(1); y++)
+            {
+                double smallestValueInRow = double.PositiveInfinity;
+                for (int x = 0; x < costMatrix.GetLength(1); x++)
+                {
+                    if (costMatrix[x, y] < smallestValueInRow)
+                    {
+                        smallestValueInRow = costMatrix[x, y];
+                    }
+                }
+                if (smallestValueInRow != 0 && !double.IsPositiveInfinity(smallestValueInRow))
+                {
+                    lowerBound += smallestValueInRow;
+                    for (int x = 0; x < costMatrix.GetLength(0); x++)
+                    {
+                        costMatrix[x, y] -= smallestValueInRow;
+                    }
+                }
+            }
+            for (int x = 0; x < costMatrix.GetLength(0); x++)
+            {
+                double smallestValueInColumn = double.PositiveInfinity;
+                for (int y = 0; y < costMatrix.GetLength(1); y++)
+                {
+                    if (costMatrix[x, y] < smallestValueInColumn)
+                    {
+                        smallestValueInColumn = costMatrix[x, y];
+                    }
+                }
+                if (smallestValueInColumn != 0 && !double.IsPositiveInfinity(smallestValueInColumn))
+                {
+                    lowerBound += smallestValueInColumn;
+                    for (int y = 0; y < costMatrix.GetLength(1); y++)
+                    {
+                        costMatrix[x, y] -= smallestValueInColumn;
+                    }
+                }
+            }
+            bool wayBackToStart = false;
+            for (int y=0;y<costMatrix.GetLength(1);y++)
+            {
+                if(!double.IsPositiveInfinity(costMatrix[y, path[0]]))
+                {
+                    wayBackToStart = true;
+                }
+            }
+            if(!wayBackToStart)
+            {
+                lowerBound = double.PositiveInfinity;
+                return;
+            }
+        }
+
+        public double getLowerBound()
+        {
+            return lowerBound;
+        }
+        public HashSet<int> getRemainingCities()
+        {
+            return remainingCities;
+        }
+        public double[,] getCostMatrix()
+        {
+            return costMatrix;
+        }
+        public List<int> getPath()
+        {
+            return path;
+        }
+
+        public int CompareTo(TSPState other)
+        {
+            double pathCountModifier = 1.25;
+            double lowerBoundModifier = 1.5;
+
+            double localWeight = (path.Count * pathCountModifier) - (lowerBound * lowerBoundModifier);
+            double otherWeight = (other.path.Count * pathCountModifier) - (other.lowerBound * lowerBoundModifier);
+
+            if (localWeight > otherWeight)
+            {
+                return 1;
+            }
+            else if (localWeight < otherWeight)
+            {
+                return -1;
+            }
+            else
+            {
+                return 0;
+            }
+        }
+
+        public void toString()
+        {
+            Console.WriteLine("Remaining cities: " + string.Join(", ", remainingCities));
+            printMatrix(costMatrix);
+            Console.WriteLine("Path" +string.Join(", ",path));
+            Console.WriteLine("LowerBound"+lowerBound.ToString());
+        }
+    }
+}
+```
